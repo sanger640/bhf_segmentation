@@ -69,6 +69,7 @@ class Trainer():
 
     self.data_h, self.data_w, self.data_d = self.parser.get_img_size()
 
+    print(self.CFG["dataset"]["name"])
     # weights for loss (and bias)
     self.loss_w = torch.zeros(self.parser.get_n_classes(), dtype=torch.float)
     for idx, w in self.CFG["dataset"]["labels_w"].items():
@@ -140,7 +141,7 @@ class Trainer():
     print("Training in device: ", self.device)
     if torch.cuda.is_available() and torch.cuda.device_count() > 0:
       self.gpu = True
-      # cudnn.benchmark = True
+      cudnn.benchmark = True
       self.model.cuda()
     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
       print("Let's use", torch.cuda.device_count(), "GPUs!")
@@ -292,6 +293,7 @@ class Trainer():
         print("Invalid learning rate groups optimizer")
 
       # train for 1 epoch
+      print(self.parser.get_train_set())
       acc, iou, loss, update_mean = self.train_epoch(train_loader=self.parser.get_train_set(),
                                                      model=self.model,
                                                      criterion=self.criterion,
@@ -359,8 +361,8 @@ class Trainer():
               if i == 0:
                 avg_backbone[key].data.zero_()
               # then sum the avg contribution
-              avg_backbone[key] += backbone[key] / \
-                  float(len(self.best_backbones))
+              avg_backbone[key] += (backbone[key] / \
+                  float(len(self.best_backbones))).int()
 
           # append current backbone to its circular buffer
           current_decoder = self.model_single.decoder.state_dict()
@@ -377,8 +379,8 @@ class Trainer():
               if i == 0:
                 avg_decoder[key].data.zero_()
               # then sum the avg contribution
-              avg_decoder[key] += decoder[key] / \
-                  float(len(self.best_decoders))
+              avg_decoder[key] += (decoder[key] / \
+                  float(len(self.best_decoders))).int()
 
           # append current head to its circular buffer
           current_head = self.model_single.head.state_dict()
@@ -395,7 +397,7 @@ class Trainer():
               if i == 0:
                 avg_head[key].data.zero_()
               # then sum the avg contribution
-              avg_head[key] += head[key] / float(len(self.best_heads))
+              avg_head[key] += (head[key] / float(len(self.best_heads))).int()
 
           # put averaged weights in dictionary and evaluate again
           self.model_single.backbone.load_state_dict(avg_backbone)
@@ -476,7 +478,10 @@ class Trainer():
 
       # compute output
       output = model(input)
+      #print(output)
+      #print(target)
       loss = criterion(output, target)
+
 
       # compute gradient and do SGD step
       optimizer.zero_grad()
