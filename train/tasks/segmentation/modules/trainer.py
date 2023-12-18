@@ -73,7 +73,7 @@ class Trainer():
     # weights for loss (and bias)
     self.loss_w = torch.zeros(self.parser.get_n_classes(), dtype=torch.float)
     for idx, w in self.CFG["dataset"]["labels_w"].items():
-      self.loss_w[idx] = torch.tensor(w)
+      self.loss_w[idx] = torch.tensor(w).to('cuda:1')
 
     # get architecture and build backbone (with pretrained weights)
     self.bbone_cfg = BackboneConfig(name=self.CFG["backbone"]["name"],
@@ -145,11 +145,12 @@ class Trainer():
       self.model.cuda()
     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
       print("Let's use", torch.cuda.device_count(), "GPUs!")
-      self.model = nn.DataParallel(self.model)   # spread in gpus
-      self.model = convert_model(self.model).cuda()  # sync batchnorm
+      self.model = nn.DataParallel(self.model, device_ids=[1,0])  # spread in gpus
+      self.model = convert_model(self.model) # sync batchnorm
       self.model_single = self.model.module  # single model to get weight names
       self.multi_gpu = True
       self.n_gpus = torch.cuda.device_count()
+
 
     # loss
     if "loss" in self.CFG["train"].keys() and self.CFG["train"]["loss"] == "xentropy":
@@ -160,7 +161,8 @@ class Trainer():
       raise Exception('Loss not defined in config file')
     # loss as dataparallel too (more images in batch)
     if self.n_gpus > 1:
-      self.criterion = nn.DataParallel(self.criterion).cuda()  # spread in gpus
+      self.criterion = nn.DataParallel(self.criterion).cuda() # spread in gpus
+\
 
     # optimizer
     train_dicts = [{'params': self.model_single.head.parameters()}]
@@ -295,8 +297,8 @@ class Trainer():
       # train for 1 epoch
       print(self.parser.get_train_set())
       acc, iou, loss, update_mean = self.train_epoch(train_loader=self.parser.get_train_set(),
-                                                     model=self.model,
-                                                     criterion=self.criterion,
+                                                     model=self.model.to('cuda:0'),
+                                                     criterion=self.criterion.to('cuda:0'),
                                                      optimizer=self.optimizer,
                                                      epoch=epoch,
                                                      evaluator=self.evaluator,
@@ -322,8 +324,8 @@ class Trainer():
         # evaluate on validation set
         print("*" * 80)
         acc, iou, loss, rand_img = self.validate(val_loader=self.parser.get_valid_set(),
-                                                 model=self.model,
-                                                 criterion=self.criterion,
+                                                 model=self.model.to('cuda:0'),
+                                                 criterion=self.criterion.to('cuda:0'),
                                                  evaluator=self.evaluator,
                                                  save_images=self.CFG["train"]["save_imgs"],
                                                  class_dict=self.CFG["dataset"]["labels"])
@@ -473,10 +475,13 @@ class Trainer():
       data_time.update(time.time() - end)
       if not self.multi_gpu and self.gpu:
         input = input.cuda()
+        print('test')
       if self.gpu:
         target = target.cuda(non_blocking=True).long()
 
       # compute output
+      input = input.to('cuda:0')
+      target = target.to('cuda:0')
       output = model(input)
       #print(output)
       #print(target)
@@ -486,7 +491,7 @@ class Trainer():
       # compute gradient and do SGD step
       optimizer.zero_grad()
       if self.n_gpus > 1:
-        idx = torch.ones(self.n_gpus).cuda()
+        idx = torch.ones(self.n_gpus).to('cuda:0')
         loss.backward(idx)
       else:
         loss.backward()
@@ -558,11 +563,13 @@ class Trainer():
       end = time.time()
       for i, (input, target) in enumerate(val_loader):
         if not self.multi_gpu and self.gpu:
-          input = input.cuda()
+          input = input.to('cuda:0')
         if self.gpu:
           target = target.cuda(non_blocking=True).long()
 
         # compute output
+        input = input.to('cuda:0')
+        target = target.to('cuda:0')
         output = model(input)
         loss = criterion(output, target)
 
